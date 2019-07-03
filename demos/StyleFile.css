@@ -1,0 +1,13 @@
+body {
+    background:#dddddd;
+    height: 100vh;
+    margin: 0px;
+}
+
+#canvas {
+    margin: 1px;
+    padding: 1px;
+    background: #d5edeb;
+    border: thin outset #aaaaaa;
+    cursor: crosshair;
+}
