@@ -1,5 +1,5 @@
 Run
- - Just a .html local file to open. Simple example in 'demos'. Documentation pending.
+ - Just a .html local file to open. Simple example in 'demos'. Change the script in the index.html for one of the other examples (under the 'Simulations' commentary).
 
 Why?
  - Simple project to learn WebGaming at a low level. No documentation, parts of code still incomplete and many features to add.
@@ -11,8 +11,10 @@ Documentation:
  - 'sceneManager.js': Allows to create Scene and attach engines and objects to it. This way, just by calling one method 'updateScene' will automatically draw every object/engine objects attach to it;
 
 Demo Instructions:
- - Press 'WASD' and move mouse to control Tank. Use '1' and '2' to switch scenes. In Scene 2, you can pan and zoom with mouse click and wheel;
+ - duckHunter.js: Use mouse to hunt down ducks.
+ - tRex.js: Use 'space' bar to jump over obstacles. You can double jump.
+ - simulation.js: Press 'WASD' and move mouse to control Tank. Use '1' and '2' to switch scenes. In Scene 2, you can pan and zoom with mouse click and wheel;
 
 Version:
- - WebGameLib1.5_package
- - Compatible with ES6
+ - WebGameLib2.1_package
+ - Compatible with ES6 and any modern browser

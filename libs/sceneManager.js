@@ -1,7 +1,8 @@
 // -------------- Scene Manager ----------------
 function SceneManager(init = {}) {
     this.scenes = init.scenes ? init.scenes : [];
-    this.currentScene = init.currentScene ? init.currentScene : null;
+    this.currentScene = null;
+    this.isActive = true;
 }
 // Zoom
 SceneManager.prototype.setAllScenesZoom = function(x, y, scale) {
@@ -27,7 +28,7 @@ SceneManager.prototype.addScene = function (newScene) {
 SceneManager.prototype.removeScene = function (eraseScene) {
     let exists = this.findScene(eraseScene);
     if(exists) {
-        let removeIndex = this.scenes.indexOf(eraseScene);
+        let removeIndex = this.scenes.indexOf(eraseScene); // ! Think its not working (havnet tried!)
         this.scenes = this.scenes.splice(removeIndex, 1);
     } else {
         throw('No such scene!');
@@ -38,23 +39,33 @@ SceneManager.prototype.findScene = function (findSceneName) {
     return this.scenes.find( (scene) => scene.name === findSceneName );
 }
 // Change current Scene
-SceneManager.prototype.changeScene = function(newScene) {
-    let exists = this.findScene(newScene);
-    if(exists) {
-        this.currentScene = newScene;
+SceneManager.prototype.changeScene = function(newSceneStr) {
+    let newScene = this.findScene(newSceneStr);
+    if(newScene) {
+        let current = this.findScene(this.currentScene);
+        current ? current.reset() : null;
+        this.currentScene = newSceneStr;
         // Toggle flags
         this.scenes.map( (scene => scene.isActive = false ));
-        exists.isActive = true;
+        newScene.resume();
     } else {
         throw('No such scene!');
     }
 }
 // ? (debugger) Print ALL values
 SceneManager.prototype.print = function() {
-    console.log(' -------> PRINT ALL <------- ', this);
+    console.info(' -------> PRINT ALL <------- ', this);
     this.scenes.map( (scene => scene.print() ));
 }
-
+/*
+    ****************************************************** //  *
+    ****************************************************** //  *
+    ****************************************************** //  *
+    ****************************************************** //  *
+    ****************************************************** //  *
+    ****************************************************** //  *
+    ****************************************************** //  *
+*/
 // -------------- Scene ----------------
 function Scene(name, ctx, init = {}) {
     // Main
@@ -66,28 +77,20 @@ function Scene(name, ctx, init = {}) {
         y: CHeight/2,
         scale: 1
     };
-    this.background = {
-        img: init.img ? init.init : null,
-        repeat: {
-            x: 3,
-            y: 3
-        },
-        mode: init.mode ? init.mode : null, // Enum: 'scroll', 'static' // TODO: More, explore 'patterns' (stretch)
-        scrollDir: {
-            dx: -10,
-            dy: 0
-        },
-        scrollPos: {
-            x: 0,
-            y: 0
-        },
-    };
+
+    // Coloring
+    if(init.img) { this.setBackground(init.img, init); }
+
     this.cameraFocus = init.cameraFocus ? init.cameraFocus : false;
+    // Objects/Engines
     this.objects = init.objects ? init.objects : [];
     this.engines = init.engines ? init.engines : [];
     if(init.engine) { this.engines.push(init.engine); }
+    // Spawners
+    this.spawners = [];
     // Flags
     this.isActive = false;
+    this.isAnimated = true;
     // Errors
     if(!Array.isArray(this.engines)) {
         throw('Not Array: Scene Constructor')
@@ -230,26 +233,46 @@ Scene.prototype.drawExtendedGrid = function(ctx, extension) {
 }
 // Background
 Scene.prototype.translateRefresh = function () {
-    this.background.scrollPos.x += this.background.scrollDir.dx;
-    this.background.scrollPos.y += this.background.scrollDir.dy;
-    if(Math.abs(this.background.scrollPos.x) > this.background.img.width) {this.background.scrollPos.x = 0}
-    if(this.background.scrollPos.y > this.background.img.height) {this.background.scrollPos.y = 0}
-    // ctx.translate(this.background.scrollPos.x, this.background.scrollPos.y);
+    if(this.isAnimated) { 
+        this.bgConf.scrollPos.x += this.bgConf.scrollDir.dx;
+        this.bgConf.scrollPos.y += this.bgConf.scrollDir.dy;
+    }
+    ctx.translate(this.bgConf.scrollPos.x, this.bgConf.scrollPos.y);
 }
-Scene.prototype.setBackground = function (img) {
-    this.background.img = img;
-    // ! Asynchrony problem: image onload! img.width = 0 -> Cria infinity
-    let ratioX = CWidth / img.width;
-    let ratioY = CHeight / img.height;
-    
-    this.background.repeat.x = ratioX * 3;
-    this.background.repeat.y = ratioY * 3;
+// init: mode, isRepeated, x, y, xX, xY
+Scene.prototype.setBackground = function (img, init) {
+    // Coloring
+    let imgClone = img.cloneNode(true);
+    let thisCtx = this;
+    imgClone.onload = function() { 
+        thisCtx.pattern = ctx.createPattern(imgClone, init.isRepeated ? 'repeat' : 'no-repeat'); 
+        thisCtx.img = {
+            width: imgClone.width,
+            height: imgClone.height
+        };
+    }
+    this.bgConf = {
+        x: init.x,
+        y: init.y,
+        repeat: {
+            x: 3,
+            y: 3
+        },
+        mode: init.mode ? init.mode : null, // Enum: 'scroll', 'static' // TODO: More, explore 'patterns' (stretch)
+        scrollDir: {
+            dx: init.dx !== undefined ? init.dx : 0,
+            dy: init.dy !== undefined ? init.dy : -1,
+        },
+        scrollPos: {
+            x: 0,
+            y: 0
+        },
+    };
 }
 // Update Coords and Draw objects
 /* Arguments:
     useSceneCtx: boolean -> use this.ctx in engines and objects
 */
-
 Scene.prototype.updateScene = function (useSceneCtx, ctx = this.ctx) {
     this.isActive = true;
     ctx.save();
@@ -259,13 +282,17 @@ Scene.prototype.updateScene = function (useSceneCtx, ctx = this.ctx) {
     }
     this.zoomIn((CWidth/2), (CHeight/2), this.zoom.scale);
     // Draw Background
-    if(this.background.img) {
+    if(this.pattern) {
         ctx.save();
+        // Horizontal / Vertical displacement
         this.translateRefresh();
-        pattern = ctx.createPattern(background, 'repeat');
-        ctx.fillStyle = pattern;
-        ctx.fillRect(-this.background.img.width, -this.background.img.height, 
-                        this.background.img.width*this.background.repeat.x, this.background.img.height*this.background.repeat.y);
+        ctx.fillStyle = this.pattern;         
+        let xM = -this.bgConf.scrollPos.x;
+        let yM = -this.bgConf.scrollPos.y;
+        if(xM >= this.img.width) { this.bgConf.scrollPos.x = 0; }
+        if(yM >= this.img.height) { this.bgConf.scrollPos.y = 0; }
+        if(!this.isAnimated) {  }
+        ctx.fillRect(xM, yM, CWidth, CHeight);
         ctx.restore();
     }
     // Draw Engines/Objects
@@ -273,29 +300,42 @@ Scene.prototype.updateScene = function (useSceneCtx, ctx = this.ctx) {
         if(this.gridStyle) {
             this.gridStyle === 'normal' ? this.drawGrid(ctx) : this.drawExtendedGrid(ctx, 2); // TODO: Make this '2' changeable
         }
-        this.engines.map( (engine) => engine.updateAllCoordsAndDraw(ctx) ); 
+        this.engines.map( (engine) => engine.updateAllCoordsAndDraw(this.isAnimated, ctx) ); 
         this.objects.map( (obj) => obj.draw(ctx) );
     }
     else {
         if(this.gridStyle) {
             this.gridStyle === 'normal' ? this.drawGrid(ctx) : this.drawExtendedGrid(ctx, 2); // TODO: Make this '2' changeable
         }
-        this.engines.map( (engine) => engine.updateAllCoordsAndDraw() ); 
+        this.engines.map( (engine) => engine.updateAllCoordsAndDraw(this.isAnimated) ); 
         this.objects.map( (obj) => obj.draw() );
     }
     ctx.restore();
 }
-// Reset
+// Reset (close scene)
 Scene.prototype.reset = function (isHardReset) {
-    this.engines.map( (engine) => engine.reset(isHardReset) ); 
-    this.objects.map( (obj) => obj.reset(isHardReset) );
+    // Reset callbacks
+    this.spawners.map( spawner => iCB.clear(spawner, 'respawn', spawner.refreshRate) ); 
+    // // Reset ALL objects
+    // // this.engines.map( engine => engine.reset(isHardReset) ); 
+    // // this.objects.map( obj => obj.reset(isHardReset) );
+}
+// Resume (close scene)
+Scene.prototype.resume = function () {
+    this.isActive = true; 
+    // Resume callbacks
+    this.spawners.map(spawner => iCB.insert(spawner, 'respawn', spawner.refreshRate) );
+    this.spawners.map( (obj) => obj.resetObjs() );
+    // // Resume ALL objects
+    // // this.engines.map( (engine) => engine.resume() ); 
+    // // this.objects.map( (obj) => obj.resume() );
 }
 // Objects and Engines
 Scene.prototype.attachEngine = function (newEngine) {
     this.engines.push(newEngine);
 }
 Scene.prototype.attachEngines = function (newEngines) {
-    this.engines.push([...newEngines]);
+    this.engines.push(...newEngines);
 }
 Scene.prototype.attachObj = function (newObject) {
     this.objects.push(newObject);
@@ -303,9 +343,13 @@ Scene.prototype.attachObj = function (newObject) {
 Scene.prototype.attachObjs = function (newObjects) {
     this.objects.push(...newObjects);
 }
+// Spawners
+Scene.prototype.attachSpawnerAndInt = function (newSpawner) {
+    this.spawners.push(newSpawner);
+}
 // ? (debugger) Print ALL values
 Scene.prototype.print = function() {
-    console.log(this.name + ': ', this);
+    console.info(this.name + ': ', this);
     this.engines.map( (engine => engine.print(this.name) ));
     this.objects.map( (object => object.print() ));
 }

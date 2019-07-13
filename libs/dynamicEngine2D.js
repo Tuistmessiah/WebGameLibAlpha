@@ -9,7 +9,7 @@ function DynamicEngine2D(isReal, init = {}) {
   this.bounceDrag = init.bounceDrag ? init.bounceDrag : 0;
 
   // Identifier
-  this.name = init.name ? init.name : 'N/A';
+  this.name = init.name ? init.name : 'none';
 
   // Physical Dimensions
   this.ownAccel = init.ownAccel ? init.ownAccel : false;
@@ -25,29 +25,46 @@ function DynamicEngine2D(isReal, init = {}) {
     collNon: null,
     collAll: null
   }
+
+  // Boundaries
+  if(init.isBounded || init.bLeft || init.bRight || init.bUp || init.bDown) {
+    this.bLeft = init.bLeft ? init.bLeft : 0;
+    this.bRight = init.bRight ? init.bRight : CWidth;
+    this.bUp = init.bUp ? init.bUp : 0;
+    this.bDown = init.bDown ? init.bDown : CHeight;
+    this.isBounded = true;
+  }
 }
 
 // Object Management
 // Arguments:
 // listName: (enum: 'collNon', 'collAll')
 DynamicEngine2D.prototype.storeObject = function(obj, listName) {
+  if(this.objList[listName] === undefined) { this.objList[listName] = []; }
   this.objList[listName].push(obj);
 }
 DynamicEngine2D.prototype.storeObjects = function(objList, listName) {
   if(Array.isArray(objList)) { this.objList[listName].push(...objList); }
   else { throw('Error: "DynamicEngine2D" while "storeObjects", not an Array'); }
 }
-DynamicEngine2D.prototype.reset = function(isHardReset) {
+DynamicEngine2D.prototype.reset = function(isHardReset, reset) {
   Object.keys(this.objList).forEach( (key) => {
     this.objList[key].forEach( (obj) => {
-      obj.reset(isHardReset);
+      obj.reset(isHardReset, reset);
+    })
+  });
+}
+DynamicEngine2D.prototype.resume = function() {
+  Object.keys(this.objList).forEach( (key) => {
+    this.objList[key].forEach( (obj) => {
+      obj.resume();
     })
   });
 }
 // ? (debugger) Print ALL values
 DynamicEngine2D.prototype.print = function(info) {
   let infoDisplay = info ? 'Engine w/ ' + info : 'Engine';
-  console.log(infoDisplay, this);
+  console.info(infoDisplay, this);
   Object.keys(this.objList).forEach( (key) => {
     this.objList[key].forEach( (obj) => {
       obj.print(info);
@@ -81,13 +98,16 @@ DynamicEngine2D.prototype.addCollisionPhysics = function(physicsConfigs, listNam
       break;
   }
 }
-
-// Coordinates and Draws
+// Update one Object
 DynamicEngine2D.prototype.updateObjCoords = function(obj, ax, ay) {
   if(obj.primitives) {
     Object.keys(obj.primitives).forEach( (key) => {
       this.updateObjCoords(obj.primitives[key], ax, ay);
     }); 
+  }
+  if(obj.name === 'die2') {
+    // console.log(obj);
+    // console.log(obj.vy);
   }
   // Update Speed
   obj.vx += ax + obj.ax;
@@ -101,10 +121,20 @@ DynamicEngine2D.prototype.updateObjCoords = function(obj, ax, ay) {
     obj.x += obj.vx;
     obj.y += obj.vy;
   }
-  
   obj.angle += obj.vr * Math.PI / 180;
-}
 
+  // Bounded Condition
+  if(this.isBounded) {
+    let dispX = obj.r ? obj.r : obj.width;
+    let dispY = obj.r ? obj.r : obj.height;
+    
+    if(obj.x - dispX < this.bLeft)  { obj.x = this.bLeft  + dispX; obj.vx = 0; }
+    if(obj.x + dispX > this.bRight) { obj.x = this.bRight - dispX; obj.vx = 0; }
+    if(obj.y - dispY < this.bUp)    { obj.y = this.bUp    + dispY; obj.vy = 0; }
+    if(obj.y + dispY > this.bDown)  { obj.y = this.bDown  - dispY; obj.vy = 0; }
+  }
+}
+// Draw ALL
 DynamicEngine2D.prototype.drawAll = function(ctx) {
   // Loop All objects
   Object.keys(this.objList).forEach( (key) => {
@@ -114,8 +144,8 @@ DynamicEngine2D.prototype.drawAll = function(ctx) {
     })
   });
 }
-
-DynamicEngine2D.prototype.updateAllCoordsAndDraw = function(ctx, andDraw = true) {
+// Update and Draw ALL
+DynamicEngine2D.prototype.updateAllCoordsAndDraw = function(isAnimated = true, ctx, andDraw = true) {
   let ax = 0,
       ay = 0;
 
@@ -132,9 +162,8 @@ DynamicEngine2D.prototype.updateAllCoordsAndDraw = function(ctx, andDraw = true)
   // Loop All objects & Collision Group
   Object.keys(this.objList).forEach( (key) => {
     this.objList[key].forEach( (obj) => {
-
       // Update Coords
-      this.updateObjCoords(obj, ax, ay);
+      if(isAnimated) this.updateObjCoords(obj, ax, ay);
 
       // Check Collision
       this.applyCollision(key, obj);
@@ -145,6 +174,23 @@ DynamicEngine2D.prototype.updateAllCoordsAndDraw = function(ctx, andDraw = true)
       }
     })
   });
+}
+// Check Collisions with Exterior Obj
+// Apply func
+DynamicEngine2D.prototype.checkCollExt = function (obj, groupName, func, values, thisCtx = this) {
+  this.objList[groupName].map(objLocal => {
+    // Objects Intersect
+    if(this.circle2Intersect(objLocal, obj)) {
+      func(obj, values, objLocal, thisCtx);
+    }
+  });
+}
+// Return obj
+DynamicEngine2D.prototype.ifCollExt = function (obj, groupName) {
+  return this.objList[groupName].find(objLocal => this.circle2Intersect(objLocal, obj) );
+}
+DynamicEngine2D.prototype.ifCollExtCustomR = function (obj, groupName, customR) {
+  return this.objList[groupName].find(objLocal => this.circle2Intersect(objLocal, {x:obj.x, y:obj.y, r:customR}) );
 }
 
 // TODO: Solve this collisions mess!
@@ -179,7 +225,6 @@ DynamicEngine2D.prototype.calcVtp = function(obj, obj2) {
   // if(obj2.y < obj.y) { delta += Math.PI; }
   // let theta = alpha - delta;
 
-  debugger
   return {
     t: v1 * Math.cos(theta),
     p: v1 * Math.sin(theta)
@@ -232,7 +277,6 @@ DynamicEngine2D.prototype.calcCollisionResult = function(obj, obj2) {
     y: v2 * Math.sin(beta)
   };
 
-  debugger
   return {
     v1F: v1F,
     v2F: v2F
@@ -311,12 +355,34 @@ DynamicEngine2D.prototype.detectExternalCollisions = function(intersectType, lis
     });
 }
 
+// Circle Intersections
 DynamicEngine2D.prototype.circle2Intersect = function (circleA, circleB) {
   let d = Math.sqrt( Math.pow(circleA.x - circleB.x, 2) + Math.pow(circleA.y - circleB.y, 2));
   return (d < circleA.r + circleB.r);
 };
-
 DynamicEngine2D.prototype.circlePointIntersect = function (circle, point) {
   let d = Math.sqrt( Math.pow(circle.x - point.x, 2) + Math.pow(circle.y - point.y, 2));
   return (d < circle.r);
 };
+// Rectangular Intersections
+// DynamicEngine2D.prototype.circleRectIntersect = function (circle, rectangle) {
+//   // clamp(value, min, max) - limits value to the range min..max
+
+//   // Find the closest point to the circle within the rectangle
+//   let closestX = this.clamp(circle.x, rectangle.Left, rectangle.Right);
+//   let closestY = this.clamp(circle.y, rectangle.Top, rectangle.Bottom);
+
+//   // Calculate the distance between the circle's center and this closest point
+//   let distanceX = circle.X - closestX;
+//   let distanceY = circle.Y - closestY;
+
+//   // If the distance is less than the circle's radius, an intersection occurs
+//   let distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+//   return distanceSquared < (circle.Radius * circle.Radius);
+// };
+
+DynamicEngine2D.prototype.clamp  = function (val, min, max) {
+  return Math.min(Math.max(min, val), max);
+}
+
+
